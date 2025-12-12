@@ -3,22 +3,18 @@ import formidable from "formidable";
 import fs from "fs";
 import OpenAI from "openai";
 
-// REQUIRED so formidable works:
+// App Router requirements
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic"; // prevents static optimization
-export const config = {
-  api: { bodyParser: false },
-};
+export const dynamic = "force-dynamic"; 
+
+const ALLOWED_ORIGIN = "https://extended-follow-855444.framer.app";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// CORS
-const ALLOWED_ORIGIN = "https://extended-follow-855444.framer.app";
-
-// Helper: convert Node req into something formidable can parse
-async function parseFormData(request) {
+// Helper to parse multipart form
+function parseForm(request) {
   return new Promise((resolve, reject) => {
     const form = formidable({ multiples: false });
     form.parse(request, (err, fields, files) => {
@@ -28,16 +24,14 @@ async function parseFormData(request) {
   });
 }
 
+// Handle POST /api/transcribe
 export async function POST(request) {
   try {
-    const { files } = await parseFormData(request);
-
+    const { files } = await parseForm(request);
     const file = files?.file;
+
     if (!file) {
-      return NextResponse.json(
-        { ok: false, message: "No file uploaded" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, message: "No file uploaded" }, { status: 400 });
     }
 
     const buffer = fs.readFileSync(file.filepath);
@@ -52,7 +46,7 @@ export async function POST(request) {
       { status: 200, headers: { "Access-Control-Allow-Origin": ALLOWED_ORIGIN } }
     );
   } catch (err) {
-    console.error("Error:", err);
+    console.error(err);
     return NextResponse.json(
       { ok: false, message: "Transcription failed", error: String(err) },
       { status: 500, headers: { "Access-Control-Allow-Origin": ALLOWED_ORIGIN } }
@@ -60,6 +54,7 @@ export async function POST(request) {
   }
 }
 
+// Handle OPTIONS (CORS)
 export function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
