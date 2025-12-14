@@ -5,76 +5,63 @@ import path from "path";
 import OpenAI from "openai";
 
 export const config = {
-  api: {
-    bodyParser: false, // IMPORTANT: disable Next.js body parsing
-  },
+  api: { bodyParser: false },
 };
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const ALLOWED_ORIGINS = [
-  "https://extended-follow-855444.framer.app",
-  "https://personaqube.com/voicelab",
-  "https://www.personaqube.com/voicelab",
-];
-
-function setCors(req, res) {
+// Single, correct CORS handler
+function applyCors(req, res) {
   const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) {
+  if (origin) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
 export default async function handler(req, res) {
-if (req.method === "OPTIONS") {
-  setCors(req, res);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  return res.status(200).json({ ok: true, transcript });
-}
+  // Handle preflight
+  if (req.method === "OPTIONS") {
+    applyCors(req, res);
+    return res.status(204).end();
+  }
+
   if (req.method !== "POST") {
-    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+    applyCors(req, res);
     return res.status(405).json({ ok: false, message: "Method not allowed" });
   }
 
   try {
-    const tmpDir = "/tmp"; // Vercel's writable temp directory
+    const tmpDir = "/tmp";
 
     const filePath = await new Promise((resolve, reject) => {
       const busboy = Busboy({ headers: req.headers });
-
       let savedFilePath = null;
 
-      busboy.on("file", (_fieldname, file, info) => {
-        const { filename } = info;
-        const tempName = `upload-${Date.now()}-${filename}`;
-        const tempPath = path.join(tmpDir, tempName);
+      busboy.on("file", (_field, file, info) => {
+        const tempPath = path.join(
+          tmpDir,
+          `upload-${Date.now()}-${info.filename}`
+        );
 
         const writeStream = fs.createWriteStream(tempPath);
         file.pipe(writeStream);
 
-        file.on("end", () => {
-          savedFilePath = tempPath;
-        });
-
-        writeStream.on("finish", () => {
-          resolve(savedFilePath);
-        });
-
-        writeStream.on("error", (err) => reject(err));
+        writeStream.on("finish", () => resolve(tempPath));
+        writeStream.on("error", reject);
       });
 
-      busboy.on("error", (err) => reject(err));
+      busboy.on("error", reject);
       req.pipe(busboy);
     });
 
     if (!filePath || !fs.existsSync(filePath)) {
-      throw new Error("File was not saved properly.");
+      throw new Error("Uploaded file missing on server");
     }
 
-    // OpenAI needs a read stream — this fixes "Could not parse multipart form"
     const readStream = fs.createReadStream(filePath);
 
     const transcription = await openai.audio.transcriptions.create({
@@ -82,22 +69,16 @@ if (req.method === "OPTIONS") {
       model: "whisper-1",
     });
 
-    // Cleanup temporary file
-    try {
-      fs.unlinkSync(filePath);
-    } catch (e) {}
+    try { fs.unlinkSync(filePath); } catch {}
 
-    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-
+    applyCors(req, res);
     return res.status(200).json({
       ok: true,
       transcript: transcription?.text ?? "",
     });
   } catch (err) {
     console.error("Transcription error:", err);
-
-    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-
+    applyCors(req, res);
     return res.status(500).json({
       ok: false,
       message: "Transcription failed",
