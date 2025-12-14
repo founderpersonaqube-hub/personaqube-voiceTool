@@ -14,16 +14,26 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const ALLOWED_ORIGIN = "https://extended-follow-855444.framer.app";
+const ALLOWED_ORIGINS = [
+  "https://extended-follow-855444.framer.app",
+  "https://personaqube.com",
+  "https://www.personaqube.com",
+];
+
+function setCors(req, res) {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+}
 
 export default async function handler(req, res) {
-  if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    return res.status(204).end();
-  }
-
+if (req.method === "OPTIONS") {
+  setCors(req, res);
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  return res.status(200).json({ ok: true, transcript });
+}
   if (req.method !== "POST") {
     res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
     return res.status(405).json({ ok: false, message: "Method not allowed" });
