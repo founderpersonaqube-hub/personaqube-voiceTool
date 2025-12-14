@@ -16,8 +16,8 @@ const openai = new OpenAI({
 
 const ALLOWED_ORIGINS = [
   "https://extended-follow-855444.framer.app",
-  "https://personaqube.com",
-  "https://www.personaqube.com",
+  "https://personaqube.com/voicelab",
+  "https://www.personaqube.com/voicelab",
 ];
 
 function setCors(req, res) {
