@@ -1,4 +1,3 @@
-import type { NextApiRequest, NextApiResponse } from "next"
 import Busboy from "busboy"
 import OpenAI from "openai"
 
