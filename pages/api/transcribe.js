@@ -9,12 +9,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-export default async function handler(req, res) {
+export default function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
       ok: false,
       error: "Method not allowed",
     })
+  }
+
+  let responded = false
+  const safeJson = (status, body) => {
+    if (!responded) {
+      responded = true
+      res.status(status).json(body)
+    }
   }
 
   try {
@@ -26,6 +34,13 @@ export default async function handler(req, res) {
     })
 
     busboy.on("finish", async () => {
+      if (chunks.length === 0) {
+        return safeJson(400, {
+          ok: false,
+          error: "No audio file received",
+        })
+      }
+
       try {
         const audioBuffer = Buffer.concat(chunks)
 
@@ -36,26 +51,32 @@ export default async function handler(req, res) {
           model: "gpt-4o-transcribe",
         })
 
-        // 🚨 ALWAYS RETURN JSON
-        return res.status(200).json({
+        return safeJson(200, {
           ok: true,
           analysis: {
-            transcript: transcription.text,
+            transcript: transcription.text || "",
           },
         })
       } catch (err) {
-        return res.status(200).json({
+        return safeJson(500, {
           ok: false,
           error: err.message || "Transcription failed",
         })
       }
     })
 
+    busboy.on("error", (err) => {
+      return safeJson(500, {
+        ok: false,
+        error: "Upload failed",
+      })
+    })
+
     req.pipe(busboy)
   } catch (err) {
-    return res.status(200).json({
+    return safeJson(500, {
       ok: false,
-      error: err.message || "Server error",
+      error: "Unexpected server error",
     })
   }
 }
