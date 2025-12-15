@@ -1,5 +1,5 @@
-import Busboy from "busboy"
 import OpenAI from "openai"
+import Busboy from "busboy"
 
 export const config = {
   api: { bodyParser: false },
@@ -10,54 +10,53 @@ const openai = new OpenAI({
 })
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") {
-      return res.json({ ok: false, error: "Invalid method" })
-    }
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      ok: false,
+      error: "Method not allowed",
+    })
+  }
 
-    const busboy = new Busboy({ headers: req.headers })
-    let audioBuffer = Buffer.alloc(0)
+  try {
+    const busboy = Busboy({ headers: req.headers })
+    const chunks = []
 
     busboy.on("file", (_, file) => {
-      file.on("data", (d) => (audioBuffer = Buffer.concat([audioBuffer, d])))
+      file.on("data", (data) => chunks.push(data))
     })
 
     busboy.on("finish", async () => {
       try {
+        const audioBuffer = Buffer.concat(chunks)
+
         const transcription = await openai.audio.transcriptions.create({
-          file: new File([audioBuffer], "voice.webm"),
+          file: new File([audioBuffer], "voice.webm", {
+            type: "audio/webm",
+          }),
           model: "gpt-4o-transcribe",
         })
 
-        const transcript = transcription.text || ""
-
-        const fillerCount = (transcript.match(/\b(um|uh|like)\b/gi) || []).length
-
-        const analysis = {
-          transcript,
-          metrics: {
-            clarity: 0.8,
-            pacing: 0.7,
-            energy: 0.6,
-            fillerRate: fillerCount / Math.max(1, transcript.split(" ").length),
+        // 🚨 ALWAYS RETURN JSON
+        return res.status(200).json({
+          ok: true,
+          analysis: {
+            transcript: transcription.text,
           },
-          personaFit: {
-            Leader: 90,
-            Coach: 75,
-            Trainer: 70,
-            Creator: 65,
-          },
-        }
-
-        res.json({ ok: true, analysis })
-      } catch (e) {
-        res.json({ ok: false, error: e.message })
+        })
+      } catch (err) {
+        return res.status(200).json({
+          ok: false,
+          error: err.message || "Transcription failed",
+        })
       }
     })
 
     req.pipe(busboy)
-  } catch (e) {
-    res.json({ ok: false, error: e.message })
+  } catch (err) {
+    return res.status(200).json({
+      ok: false,
+      error: err.message || "Server error",
+    })
   }
 }
 
