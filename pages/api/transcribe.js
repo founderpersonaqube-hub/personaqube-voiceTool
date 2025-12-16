@@ -1,4 +1,5 @@
 import OpenAI from "openai"
+import Busboy from "busboy"
 import { calculateConfidenceAndPersona } from "../../lib/voiceScoring.js"
 
 function setCors(res) {
@@ -45,7 +46,7 @@ function extractMetrics(transcript) {
   }
 }
 
-export default async function handler(req, res) {
+export default function handler(req, res) {
   setCors(res)
 
   if (req.method === "OPTIONS") {
@@ -55,43 +56,81 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false })
   }
 
-  try {
-    // ✅ THIS IS THE KEY LINE
-    const formData = await req.formData()
-    const audioFile = formData.get("file")
+  const busboy = Busboy({ headers: req.headers })
 
-    if (!audioFile) {
-      return res.status(400).json({
+  let audioBuffer = null
+  let mimeType = null
+  let responded = false
+
+  function safeRespond(status, payload) {
+    if (responded) return
+    responded = true
+    res.status(status).json(payload)
+  }
+
+  busboy.on("file", (_, file, info) => {
+    mimeType = info.mimeType
+    const chunks = []
+
+    file.on("data", d => chunks.push(d))
+    file.on("end", () => {
+      audioBuffer = Buffer.concat(chunks)
+    })
+  })
+
+  busboy.on("error", err => {
+    console.error("BUSBOY ERROR:", err)
+    safeRespond(400, { ok: false, error: "Upload failed" })
+  })
+
+  busboy.on("finish", async () => {
+    try {
+      if (!audioBuffer) {
+        return safeRespond(400, {
+          ok: false,
+          error: "No audio received",
+        })
+      }
+
+      if (!mimeType || !mimeType.includes("webm")) {
+        return safeRespond(400, {
+          ok: false,
+          error: `Unsupported format: ${mimeType}`,
+        })
+      }
+
+      const transcription = await openai.audio.transcriptions.create({
+        file: {
+          value: audioBuffer,
+          filename: "voice.webm",
+          contentType: "audio/webm",
+        },
+        model: "whisper-1",
+        language: "en",
+      })
+
+      const transcript = transcription.text || ""
+      const metrics = extractMetrics(transcript)
+      const { confidenceScore, personaFit } =
+        calculateConfidenceAndPersona(metrics)
+
+      safeRespond(200, {
+        ok: true,
+        transcript,
+        metrics,
+        confidenceScore,
+        personaFit,
+      })
+    } catch (err) {
+      console.error("WHISPER ERROR:", err)
+      safeRespond(500, {
         ok: false,
-        error: "Audio file not found",
+        error: err.message || "Transcription failed",
       })
     }
+  })
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: "whisper-1",
-      language: "en",
-    })
-
-    const transcript = transcription.text || ""
-    const metrics = extractMetrics(transcript)
-
-    const { confidenceScore, personaFit } =
-      calculateConfidenceAndPersona(metrics)
-
-    return res.status(200).json({
-      ok: true,
-      transcript,
-      metrics,
-      confidenceScore,
-      personaFit,
-    })
-  } catch (err) {
-    console.error("TRANSCRIBE ERROR:", err)
-    return res.status(500).json({
-      ok: false,
-      error: err.message || "Transcription failed",
-    })
-  }
+  // 🔴 THIS LINE IS CRITICAL
+  req.pipe(busboy)
 }
 
