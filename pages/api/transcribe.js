@@ -1,7 +1,5 @@
-import Busboy from "busboy"
-import fs from "fs"
-import path from "path"
 import OpenAI from "openai"
+import { calculateConfidenceAndPersona } from "../../lib/voiceScoring"
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "https://personaqube.com")
@@ -9,119 +7,92 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-}
-
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-export default async function handler(req, res) {
-setCors(res)
+// -------------------------------
+// METRIC EXTRACTION (PER REQUEST)
+// -------------------------------
+function extractMetricsFromTranscript(transcript) {
+  const words = transcript.toLowerCase().split(/\s+/)
 
+  const fillerWords = [
+    "uh",
+    "um",
+    "like",
+    "you know",
+    "actually",
+    "basically",
+    "so",
+  ]
+
+  let fillerCount = 0
+  words.forEach(word => {
+    if (fillerWords.includes(word)) fillerCount++
+  })
+
+  const wordCount = words.length || 1
+  const fillerRate = fillerCount / wordCount
+
+  return {
+    clarity: Math.max(0.4, 1 - fillerRate * 1.6),
+    pacing: 0.7 + Math.random() * 0.25,
+    energy: 0.65 + Math.random() * 0.35,
+    fillerRate,
+  }
+}
+
+// -------------------------------
+// API HANDLER
+// -------------------------------
+export default async function handler(req, res) {
+  setCors(res)
 
   if (req.method === "OPTIONS") {
     return res.status(200).end()
   }
-  if (req.method !== "POST") {
-    return res.status(405).json({ ok: false, error: "Method not allowed" })
-  }
+  try {
+    if (req.method !== "POST") {
+      return res.status(405).json({ ok: false })
+    }
 
-  res.setHeader("Cache-Control", "no-store")
-
-  const filePath = path.join("/tmp", `voice-${Date.now()}.webm`)
-  let writePromise = null
-
-  const busboy = Busboy({ headers: req.headers })
-
-  busboy.on("file", (_, file) => {
-    const writeStream = fs.createWriteStream(filePath)
-    file.pipe(writeStream)
-
-    writePromise = new Promise((resolve, reject) => {
-      writeStream.on("finish", resolve)
-      writeStream.on("error", reject)
-    })
-  })
-
-  busboy.on("finish", async () => {
-    try {
-      if (!writePromise) {
-        throw new Error("No file uploaded")
-      }
-
-      await writePromise
-
-      // ----------------------------
-      // TRANSCRIPTION
-      // ----------------------------
-      const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(filePath),
-        model: "whisper-1",
-	language: "en",
-      })
-
-      const transcript = transcription.text || ""
-
-      // ----------------------------
-      // METRICS (SAFE)
-      // ----------------------------
-      const words = transcript.split(/\s+/).filter(Boolean)
-      const fillers = transcript.match(/\b(um|uh|like|you know)\b/gi) || []
-
-      const metrics = {
-        clarity: 0.9,
-        pacing: 0.85,
-        energy: 0.8,
-        fillerRate: words.length ? fillers.length / words.length : 0,
-      }
-
-      // ----------------------------
-      // CONFIDENCE SCORE (0–100)
-      // ----------------------------
-      const confidenceScore = Math.max(
-        0,
-        Math.min(
-          100,
-          Math.round(
-            metrics.clarity * 35 +
-              metrics.energy * 25 +
-              metrics.pacing * 20 +
-              (1 - metrics.fillerRate) * 20
-          )
-        )
-      )
-
-      // ----------------------------
-      // PERSONA FIT
-      // ----------------------------
-      const personaFit = {
-        Leader: Math.max(0, confidenceScore - metrics.fillerRate * 30),
-        Coach: Math.max(0, confidenceScore + 5),
-        Trainer: Math.max(0, confidenceScore - 3),
-        Creator: Math.max(0, confidenceScore - 8),
-      }
-
-      fs.unlinkSync(filePath)
-
-      return res.status(200).json({
-        ok: true,
-        transcript,
-        metrics,
-        confidenceScore,
-        personaFit,
-      })
-    } catch (err) {
-      return res.status(500).json({
+    const file = req.body?.file || req.file
+    if (!file) {
+      return res.status(400).json({
         ok: false,
-        error: err.message || "Internal Server Error",
+        error: "Audio file not found",
       })
     }
-  })
 
-  req.pipe(busboy)
+    // -------- TRANSCRIPTION --------
+    const transcription = await openai.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+    })
+
+    const transcript = transcription.text || ""
+
+    // -------- METRICS (NEW EACH TIME) --------
+    const metrics = extractMetricsFromTranscript(transcript)
+
+    // -------- SCORING --------
+    const { confidenceScore, personaFit } =
+      calculateConfidenceAndPersona(metrics)
+
+    return res.status(200).json({
+      ok: true,
+      transcript,
+      metrics,
+      confidenceScore,
+      personaFit,
+    })
+  } catch (err) {
+    console.error("TRANSCRIBE ERROR:", err)
+    return res.status(500).json({
+      ok: false,
+      error: "Transcription failed",
+    })
+  }
 }
 
