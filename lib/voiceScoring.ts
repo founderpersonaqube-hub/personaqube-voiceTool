@@ -1,44 +1,80 @@
 // lib/voiceScoring.ts
 
-export function computeConfidence(metrics: {
-  clarity: number
-  pacing: number
-  energy: number
-  fillerRate: number
-}) {
-  const raw =
-    metrics.clarity * 0.35 +
-    metrics.pacing * 0.25 +
-    metrics.energy * 0.25 -
-    metrics.fillerRate * 0.6
-
-  return Math.max(0, Math.min(100, Math.round(raw * 100)))
+export type VoiceMetrics = {
+  clarity: number        // 0–1
+  pacing: number         // 0–1 (0 = slow, 1 = fast)
+  energy: number         // 0–1
+  fillerRate: number     // 0–1
 }
 
-export function computePersonaFit(metrics: {
-  clarity: number
-  pacing: number
-  energy: number
-  fillerRate: number
-}) {
+// ------------------------
+// Utilities
+// ------------------------
+function clamp(n: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, n))
+}
+
+function invert(n: number) {
+  return 1 - n
+}
+
+// ------------------------
+// Global Confidence Score
+// (persona-agnostic)
+// ------------------------
+export function computeOverallConfidence(m: VoiceMetrics): number {
+  const score =
+    m.clarity * 35 +
+    m.energy * 25 +
+    m.pacing * 20 -
+    m.fillerRate * 40
+
+  return clamp(Math.round(score))
+}
+
+// ------------------------
+// Persona-Aware Scoring
+// ------------------------
+export function computePersonaFit(m: VoiceMetrics) {
+  const leader =
+    m.clarity * 40 +
+    m.energy * 30 +
+    invert(m.fillerRate) * 30 -
+    Math.abs(m.pacing - 0.6) * 20
+
+  const coach =
+    m.clarity * 35 +
+    invert(m.fillerRate) * 35 +
+    invert(Math.abs(m.pacing - 0.45)) * 30
+
+  const trainer =
+    m.clarity * 45 +
+    invert(m.fillerRate) * 30 +
+    invert(Math.abs(m.pacing - 0.55)) * 25
+
+  const creator =
+    m.energy * 45 +
+    m.clarity * 25 +
+    invert(Math.abs(m.pacing - 0.7)) * 30
+
   return {
-    Leader: Math.round(
-      metrics.clarity * 40 +
-      metrics.energy * 40 -
-      metrics.fillerRate * 30
-    ),
-    Trainer: Math.round(
-      metrics.pacing * 40 +
-      metrics.clarity * 30
-    ),
-    Coach: Math.round(
-      metrics.pacing * 40 +
-      (1 - metrics.fillerRate) * 40
-    ),
-    Creator: Math.round(
-      metrics.energy * 50 +
-      metrics.clarity * 20
-    ),
+    Leader: clamp(Math.round(leader)),
+    Coach: clamp(Math.round(coach)),
+    Trainer: clamp(Math.round(trainer)),
+    Creator: clamp(Math.round(creator)),
+  }
+}
+
+// ------------------------
+// Persona Ranking
+// ------------------------
+export function rankPersonas(personaFit: Record<string, number>) {
+  const sorted = Object.entries(personaFit).sort((a, b) => b[1] - a[1])
+
+  return {
+    primary: sorted[0],
+    secondary: sorted[1],
+    all: sorted,
   }
 }
 
