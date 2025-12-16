@@ -11,8 +11,6 @@ function setCors(res) {
 // ----------------------------
 // CONFIDENCE SCORE (0-100)
 // ----------------------------
-let confidenceScore = 0
-let personaFit = {}
 
 const confidenceScore = Math.max(
     0,
