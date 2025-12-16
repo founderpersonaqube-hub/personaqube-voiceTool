@@ -9,34 +9,30 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
 // ----------------------------
-// Persona Scoring
+// CONFIDENCE SCORE (0-100)
 // ----------------------------
 let confidenceScore = 0
 let personaFit = {}
 
-try {
-  confidenceScore = Math.max(
+const confidenceScore = Math.max(
     0,
-    Math.round(
-      (metrics?.clarity || 0) * 35 +
-        (metrics?.energy || 0) * 25 +
-        (metrics?.pacing || 0) * 20 -
-        (metrics?.fillerRate || 0) * 40
-    )
-  )
+    Math.min(
+       100,
+       Math.round(
+         metrics.clarity * 35 +
+         metrics.energy  * 25 +
+         metrics.pacing  * 20 +
+         (1 - metrics.fillerRate) * 20
+         )
+     )
+)
 
-  personaFit = {
-    Leader: Math.max(0, confidenceScore - (metrics?.fillerRate || 0) * 50),
-    Coach: confidenceScore + 5,
-    Trainer: Math.max(0, confidenceScore - 3),
-    Creator: Math.max(0, confidenceScore - 8),
+const personaFit = {
+    Leader: Math.max(0, Math.round(confidenceScore - metrics.fillerRate * 50)),
+    Coach: Math.max(0, Math.round(confidenceScore + 5)),
+    Trainer: Math.max(0, Math.round(confidenceScore - 3)),
+    Creator: Math.max(0, Math.round(confidenceScore - 8)),
   }
-} catch (e) {
-  // Never crash the API
-  confidenceScore = 0
-  personaFit = {}
-}
-
 
 export const config = {
   api: {
