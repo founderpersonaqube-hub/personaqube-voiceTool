@@ -98,8 +98,6 @@ setCors(res)
         ok: true,
         transcript,
         metrics,
-	confidenceScore,
-	personaFit,
       })
     } catch (err) {
       return res.status(500).json({
