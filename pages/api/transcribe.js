@@ -104,10 +104,11 @@ export default async function handler(req, res) {
       personaFit,
     })
   } catch (err) {
-    console.error("TRANSCRIBE ERROR:", err)
+    console.error("WHISPER ERROR FULL:", err)
     return res.status(500).json({
       ok: false,
-      error: "Transcription failed",
+      error: err?.message || "Whisper transcription failed",
+      stack: err?.stack,
     })
   }
 }
