@@ -19,6 +19,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+const confidenceScore = Math.max(
+  0,
+  Math.round(
+    metrics.clarity * 35 +
+      metrics.energy * 25 +
+      metrics.pacing * 20 -
+      metrics.fillerRate * 40
+  )
+)
+
+const personaFit = {
+  Leader: Math.max(0, confidenceScore - metrics.fillerRate * 50),
+  Coach: Math.max(0, confidenceScore + 5),
+  Trainer: Math.max(0, confidenceScore - 3),
+  Creator: Math.max(0, confidenceScore - 8),
+}
+
 export default async function handler(req, res) {
 setCors(res)
 
@@ -81,6 +98,8 @@ setCors(res)
         ok: true,
         transcript,
         metrics,
+	confidenceScore,
+	personaFit,
       })
     } catch (err) {
       return res.status(500).json({
