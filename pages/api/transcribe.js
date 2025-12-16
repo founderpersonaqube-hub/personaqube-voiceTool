@@ -1,6 +1,6 @@
 import OpenAI from "openai"
 import Busboy from "busboy"
-import { calculateConfidenceAndPersona } from "../../lib/voiceScoring"
+import { calculateConfidenceAndPersona } from "../../lib/voiceScoring.js"
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*")
