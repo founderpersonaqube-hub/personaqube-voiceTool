@@ -1,23 +1,23 @@
 import OpenAI from "openai"
-import { calculateConfidenceAndPersona } from "../../lib/voiceScoring.js"
+import { calculateConfidenceAndPersona } from "../../lib/voiceScoring"
 
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "https://personaqube.com")
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+export const config = {
+  api: {
+    bodyParser: false,
+  },
 }
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-// -------------------------------
-// METRIC EXTRACTION (PER REQUEST)
-// -------------------------------
-function extractMetricsFromTranscript(transcript) {
+// --------------------------------
+// TRANSCRIPT → METRICS
+// --------------------------------
+function extractMetrics(transcript) {
   const words = transcript.toLowerCase().split(/\s+/)
 
-  const fillerWords = [
+  const fillers = [
     "uh",
     "um",
     "like",
@@ -28,11 +28,11 @@ function extractMetricsFromTranscript(transcript) {
   ]
 
   let fillerCount = 0
-  words.forEach(word => {
-    if (fillerWords.includes(word)) fillerCount++
+  words.forEach(w => {
+    if (fillers.includes(w)) fillerCount++
   })
 
-  const wordCount = words.length || 1
+  const wordCount = Math.max(1, words.length)
   const fillerRate = fillerCount / wordCount
 
   return {
@@ -43,40 +43,45 @@ function extractMetricsFromTranscript(transcript) {
   }
 }
 
-// -------------------------------
+// --------------------------------
 // API HANDLER
-// -------------------------------
+// --------------------------------
 export default async function handler(req, res) {
-  setCors(res)
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end()
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false })
   }
-  try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ ok: false })
-    }
 
-    const file = req.body?.file || req.file
-    if (!file) {
+  try {
+    const formData = await new Promise((resolve, reject) => {
+      const chunks = []
+      req.on("data", chunk => chunks.push(chunk))
+      req.on("end", () => {
+        const buffer = Buffer.concat(chunks)
+        resolve(buffer)
+      })
+      req.on("error", reject)
+    })
+
+    if (!formData || formData.length === 0) {
       return res.status(400).json({
         ok: false,
-        error: "Audio file not found",
+        error: "Audio file not received",
       })
     }
 
-    // -------- TRANSCRIPTION --------
+    // Whisper expects a File-like object
+    const audioFile = new File([formData], "voice.webm", {
+      type: "audio/webm",
+    })
+
     const transcription = await openai.audio.transcriptions.create({
-      file,
+      file: audioFile,
       model: "whisper-1",
     })
 
     const transcript = transcription.text || ""
 
-    // -------- METRICS (NEW EACH TIME) --------
-    const metrics = extractMetricsFromTranscript(transcript)
-
-    // -------- SCORING --------
+    const metrics = extractMetrics(transcript)
     const { confidenceScore, personaFit } =
       calculateConfidenceAndPersona(metrics)
 
