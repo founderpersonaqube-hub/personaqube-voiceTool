@@ -61,6 +61,7 @@ setCors(res)
       const transcription = await openai.audio.transcriptions.create({
         file: fs.createReadStream(filePath),
         model: "whisper-1",
+	language: "en",
       })
 
       const transcript = transcription.text || ""
