@@ -1,90 +1,120 @@
-// pages/api/transcribe.js
-
 import Busboy from "busboy"
-import { computeConfidence, computePersonaFit } from "../../lib/voiceScoring"
+import OpenAI from "openai"
+import fs from "fs"
+import path from "path"
+import crypto from "crypto"
 
 export const config = {
-  api: { bodyParser: false },
+    api: {
+        bodyParser: false,
+    },
 }
 
-function json(res, status, payload) {
-  res.statusCode = status
-  res.setHeader("Content-Type", "application/json")
-  res.end(JSON.stringify(payload))
-}
-
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
-}
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+})
 
 export default async function handler(req, res) {
-  setCors(res)
-
-  // ✅ Handle preflight cleanly
-  if (req.method === "OPTIONS") {
-    return json(res, 200, { ok: true })
-  }
-
-  if (req.method !== "POST") {
-    return json(res, 405, { ok: false, error: "Method not allowed" })
-  }
-
-  try {
-    const audioChunks = []
-    let fileFound = false
-
-    await new Promise((resolve, reject) => {
-      const busboy = Busboy({
-        headers: req.headers,
-        limits: { files: 1 },
-      })
-
-      busboy.on("file", (_, file) => {
-        fileFound = true
-        file.on("data", (d) => audioChunks.push(d))
-      })
-
-      busboy.on("finish", resolve)
-      busboy.on("error", reject)
-
-      req.pipe(busboy)
-    })
-
-    if (!fileFound || audioChunks.length === 0) {
-      return json(res, 400, {
-        ok: false,
-        error: "No audio received",
-      })
+    if (req.method !== "POST") {
+        return res.status(405).json({ ok: false, error: "Method not allowed" })
     }
 
-    // ===== PHASE 2.1 SAFE PLACEHOLDER =====
-    const transcript =
-      "Hi everyone, this is Ravi here. I am excited to record my voice."
+    // 🔒 Disable ALL caching
+    res.setHeader("Cache-Control", "no-store")
 
-    const metrics = {
-      clarity: 0.9,
-      pacing: 0.85,
-      energy: 0.8,
-      fillerRate: 0.15,
-    }
+    const busboy = Busboy({ headers: req.headers })
 
-    const confidenceScore = computeConfidence(metrics)
-    const personaFit = computePersonaFit(metrics)
+    // ✅ UNIQUE per request
+    const requestId = crypto.randomUUID()
+    const tempDir = "/tmp"
+    const tempFilePath = path.join(tempDir, `voice-${requestId}.webm`)
 
-    return json(res, 200, {
-      ok: true,
-      transcript,
-      metrics,
-      confidenceScore,
-      personaFit,
+    let fileSaved = false
+
+    busboy.on("file", (_, file) => {
+        const writeStream = fs.createWriteStream(tempFilePath)
+        file.pipe(writeStream)
+
+        writeStream.on("close", () => {
+            fileSaved = true
+        })
     })
-  } catch (err) {
-    return json(res, 500, {
-      ok: false,
-      error: err?.message || "Analysis failed",
+
+    busboy.on("finish", async () => {
+        try {
+            if (!fileSaved) {
+                throw new Error("Audio file not saved")
+            }
+
+            // ----------------------------
+            // TRANSCRIPTION (FRESH)
+            // ----------------------------
+            const transcription = await openai.audio.transcriptions.create({
+                file: fs.createReadStream(tempFilePath),
+                model: "gpt-4o-transcribe",
+            })
+
+            const transcript = transcription.text || ""
+
+            // ----------------------------
+            // SIMPLE METRICS (FRESH)
+            // ----------------------------
+            const wordCount = transcript.split(/\s+/).length
+            const fillerMatches = transcript.match(/\b(um|uh|like|you know)\b/gi) || []
+
+            const fillerRate =
+                wordCount > 0 ? Math.min(fillerMatches.length / wordCount, 1) : 0
+
+            const metrics = {
+                clarity: 0.9,
+                pacing: 0.85,
+                energy: 0.8,
+                fillerRate,
+            }
+
+            // ----------------------------
+            // CONFIDENCE SCORE (FRESH)
+            // ----------------------------
+            const confidenceScore = Math.max(
+                0,
+                Math.round(
+                    metrics.clarity * 40 +
+                        metrics.pacing * 30 +
+                        metrics.energy * 30 -
+                        metrics.fillerRate * 100
+                )
+            )
+
+            // ----------------------------
+            // PERSONA FIT (FRESH)
+            // ----------------------------
+            const personaFit = {
+                Leader: Math.max(0, confidenceScore),
+                Trainer: Math.max(0, confidenceScore - 3),
+                Coach: Math.max(0, confidenceScore + 4),
+                Creator: Math.max(0, confidenceScore - 6),
+            }
+
+            // ----------------------------
+            // CLEANUP
+            // ----------------------------
+            fs.unlinkSync(tempFilePath)
+
+            return res.status(200).json({
+                ok: true,
+                transcript,
+                metrics,
+                confidenceScore,
+                personaFit,
+            })
+        } catch (err) {
+            return res.status(500).json({
+                ok: false,
+                error: err.message || "Transcription failed",
+            })
+        }
     })
-  }
+
+    req.pipe(busboy)
 }
 
