@@ -23,40 +23,50 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") {
     return res.status(200).end()
   }
-
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method not allowed" })
   }
 
-  try {
-    const busboy = Busboy({ headers: req.headers })
+  const busboy = Busboy({ headers: req.headers })
 
-    let audioBuffer = null
-    let mimeType = null
+  let audioBuffer = null
+  let mimeType = null
+  let responded = false
 
-    busboy.on("file", (_, file, info) => {
-      mimeType = info.mimeType
-      const chunks = []
+  function safeRespond(status, payload) {
+    if (responded) return
+    responded = true
+    res.status(status).json(payload)
+  }
 
-      file.on("data", (data) => chunks.push(data))
-      file.on("end", () => {
-        audioBuffer = Buffer.concat(chunks)
-      })
+  busboy.on("file", (_, file, info) => {
+    mimeType = info.mimeType
+    const chunks = []
+
+    file.on("data", (data) => chunks.push(data))
+    file.on("end", () => {
+      audioBuffer = Buffer.concat(chunks)
     })
+  })
 
-    busboy.on("finish", async () => {
+  busboy.on("error", (err) => {
+    console.error("BUSBOY ERROR:", err)
+    safeRespond(400, { ok: false, error: "Upload error" })
+  })
+
+  busboy.on("finish", async () => {
+    try {
       if (!audioBuffer) {
-        return res.status(400).json({
+        return safeRespond(400, {
           ok: false,
-          error: "Audio file not received",
+          error: "No audio received",
         })
       }
 
-      // 🔐 IMPORTANT: must match actual recorded format
       if (!mimeType || !mimeType.includes("webm")) {
-        return res.status(400).json({
+        return safeRespond(400, {
           ok: false,
-          error: `Unsupported mime type: ${mimeType}`,
+          error: `Unsupported format: ${mimeType}`,
         })
       }
 
@@ -69,20 +79,20 @@ export default async function handler(req, res) {
         model: "whisper-1",
       })
 
-      return res.status(200).json({
+      safeRespond(200, {
         ok: true,
         transcript: transcription.text,
       })
-    })
+    } catch (err) {
+      console.error("WHISPER ERROR:", err)
+      safeRespond(500, {
+        ok: false,
+        error: err.message || "Transcription failed",
+      })
+    }
+  })
 
-    req.pipe(busboy)
-  } catch (err) {
-    console.error("WHISPER ERROR:", err)
-
-    return res.status(500).json({
-      ok: false,
-      error: err.message || "Transcription failed",
-    })
-  }
+  // 🔴 THIS LINE IS CRITICAL — DO NOT REMOVE
+  req.pipe(busboy)
 }
 
