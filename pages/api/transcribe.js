@@ -21,7 +21,9 @@ const openai = new OpenAI({
 })
 
 export default async function handler(req, res) {
+export default function handler(req, res) {
 setCors(res)
+
 
   if (req.method === "OPTIONS") {
     return res.status(200).end()
@@ -30,35 +32,32 @@ setCors(res)
         return res.status(405).json({ ok: false, error: "Method not allowed" })
     }
 
-    // 🔒 Disable ALL caching
     res.setHeader("Cache-Control", "no-store")
 
-    const busboy = Busboy({ headers: req.headers })
-
-    // ✅ UNIQUE per request
     const requestId = crypto.randomUUID()
-    const tempDir = "/tmp"
-    const tempFilePath = path.join(tempDir, `voice-${requestId}.webm`)
+    const tempFilePath = path.join("/tmp", `voice-${requestId}.webm`)
 
-    let fileSaved = false
+    let writePromise
+
+    const busboy = Busboy({ headers: req.headers })
 
     busboy.on("file", (_, file) => {
         const writeStream = fs.createWriteStream(tempFilePath)
         file.pipe(writeStream)
 
-        writeStream.on("close", () => {
-            fileSaved = true
+        writePromise = new Promise((resolve, reject) => {
+            writeStream.on("finish", resolve)
+            writeStream.on("error", reject)
         })
     })
 
     busboy.on("finish", async () => {
         try {
-            if (!fileSaved) {
-                throw new Error("Audio file not saved")
-            }
+            // ✅ WAIT until file is actually written
+            await writePromise
 
             // ----------------------------
-            // TRANSCRIPTION (FRESH)
+            // TRANSCRIPTION
             // ----------------------------
             const transcription = await openai.audio.transcriptions.create({
                 file: fs.createReadStream(tempFilePath),
@@ -68,13 +67,16 @@ setCors(res)
             const transcript = transcription.text || ""
 
             // ----------------------------
-            // SIMPLE METRICS (FRESH)
+            // METRICS
             // ----------------------------
-            const wordCount = transcript.split(/\s+/).length
-            const fillerMatches = transcript.match(/\b(um|uh|like|you know)\b/gi) || []
+            const words = transcript.split(/\s+/).filter(Boolean)
+            const fillerMatches =
+                transcript.match(/\b(um|uh|like|you know)\b/gi) || []
 
             const fillerRate =
-                wordCount > 0 ? Math.min(fillerMatches.length / wordCount, 1) : 0
+                words.length > 0
+                    ? Math.min(fillerMatches.length / words.length, 1)
+                    : 0
 
             const metrics = {
                 clarity: 0.9,
@@ -84,7 +86,7 @@ setCors(res)
             }
 
             // ----------------------------
-            // CONFIDENCE SCORE (FRESH)
+            // CONFIDENCE SCORE
             // ----------------------------
             const confidenceScore = Math.max(
                 0,
@@ -97,18 +99,16 @@ setCors(res)
             )
 
             // ----------------------------
-            // PERSONA FIT (FRESH)
+            // PERSONA FIT
             // ----------------------------
             const personaFit = {
-                Leader: Math.max(0, confidenceScore),
+                Leader: confidenceScore,
                 Trainer: Math.max(0, confidenceScore - 3),
                 Coach: Math.max(0, confidenceScore + 4),
                 Creator: Math.max(0, confidenceScore - 6),
             }
 
-            // ----------------------------
-            // CLEANUP
-            // ----------------------------
+            // Cleanup
             fs.unlinkSync(tempFilePath)
 
             return res.status(200).json({
@@ -121,7 +121,7 @@ setCors(res)
         } catch (err) {
             return res.status(500).json({
                 ok: false,
-                error: err.message || "Transcription failed",
+                error: err.message || "Processing failed",
             })
         }
     })
