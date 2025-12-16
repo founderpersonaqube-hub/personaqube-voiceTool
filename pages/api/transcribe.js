@@ -3,6 +3,17 @@ import OpenAI from "openai"
 import fs from "fs"
 import path from "path"
 import crypto from "crypto"
+import {
+  personaExplanation,
+  personaBlockers,
+  personaImprovements,
+} from "@/lib/voiceInsights"
+
+const primaryPersona = personaRank.primary[0]
+
+const personaWhy = personaExplanation(primaryPersona, metrics)
+const blockers = personaBlockers(primaryPersona, metrics)
+const improvements = personaImprovements(primaryPersona, metrics)
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "https://personaqube.com")
@@ -116,6 +127,10 @@ setCors(res)
                 metrics,
                 confidenceScore,
                 personaFit,
+		personaRank,
+		personaWhy,
+		blockers,
+		improvements,
             })
         } catch (err) {
             return res.status(500).json({
