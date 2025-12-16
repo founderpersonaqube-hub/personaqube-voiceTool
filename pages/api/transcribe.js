@@ -8,29 +8,6 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
   res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
-// ----------------------------
-// CONFIDENCE SCORE (0-100)
-// ----------------------------
-
-const confidenceScore = Math.max(
-    0,
-    Math.min(
-       100,
-       Math.round(
-         metrics.clarity * 35 +
-         metrics.energy  * 25 +
-         metrics.pacing  * 20 +
-         (1 - metrics.fillerRate) * 20
-         )
-     )
-)
-
-const personaFit = {
-    Leader: Math.max(0, Math.round(confidenceScore - metrics.fillerRate * 50)),
-    Coach: Math.max(0, Math.round(confidenceScore + 5)),
-    Trainer: Math.max(0, Math.round(confidenceScore - 3)),
-    Creator: Math.max(0, Math.round(confidenceScore - 8)),
-  }
 
 export const config = {
   api: {
@@ -45,19 +22,17 @@ const openai = new OpenAI({
 export default async function handler(req, res) {
 setCors(res)
 
+
   if (req.method === "OPTIONS") {
     return res.status(200).end()
   }
-
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method not allowed" })
   }
 
   res.setHeader("Cache-Control", "no-store")
 
-  const uploadDir = "/tmp"
-  const filePath = path.join(uploadDir, `voice-${Date.now()}.webm`)
-
+  const filePath = path.join("/tmp", `voice-${Date.now()}.webm`)
   let writePromise = null
 
   const busboy = Busboy({ headers: req.headers })
@@ -80,6 +55,9 @@ setCors(res)
 
       await writePromise
 
+      // ----------------------------
+      // TRANSCRIPTION
+      // ----------------------------
       const transcription = await openai.audio.transcriptions.create({
         file: fs.createReadStream(filePath),
         model: "whisper-1",
@@ -87,7 +65,9 @@ setCors(res)
 
       const transcript = transcription.text || ""
 
-      // Simple metrics (stable)
+      // ----------------------------
+      // METRICS (SAFE)
+      // ----------------------------
       const words = transcript.split(/\s+/).filter(Boolean)
       const fillers = transcript.match(/\b(um|uh|like|you know)\b/gi) || []
 
@@ -98,19 +78,45 @@ setCors(res)
         fillerRate: words.length ? fillers.length / words.length : 0,
       }
 
+      // ----------------------------
+      // CONFIDENCE SCORE (0–100)
+      // ----------------------------
+      const confidenceScore = Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            metrics.clarity * 35 +
+              metrics.energy * 25 +
+              metrics.pacing * 20 +
+              (1 - metrics.fillerRate) * 20
+          )
+        )
+      )
+
+      // ----------------------------
+      // PERSONA FIT
+      // ----------------------------
+      const personaFit = {
+        Leader: Math.max(0, confidenceScore - metrics.fillerRate * 30),
+        Coach: Math.max(0, confidenceScore + 5),
+        Trainer: Math.max(0, confidenceScore - 3),
+        Creator: Math.max(0, confidenceScore - 8),
+      }
+
       fs.unlinkSync(filePath)
 
       return res.status(200).json({
         ok: true,
         transcript,
         metrics,
-	confidenceScore,
-	personaFit,
+        confidenceScore,
+        personaFit,
       })
     } catch (err) {
       return res.status(500).json({
         ok: false,
-        error: err.message || "Server error",
+        error: err.message || "Internal Server Error",
       })
     }
   })
