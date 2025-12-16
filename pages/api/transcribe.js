@@ -21,7 +21,6 @@ const openai = new OpenAI({
 })
 
 export default async function handler(req, res) {
-export default function handler(req, res) {
 setCors(res)
 
 
