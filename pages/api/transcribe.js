@@ -1,5 +1,5 @@
 import OpenAI from "openai"
-import { calculateConfidenceAndPersona } from "../../lib/voiceScoring"
+import { calculateConfidenceAndPersona } from "../../lib/voiceScoring.js"
 
 export const config = {
   api: {
