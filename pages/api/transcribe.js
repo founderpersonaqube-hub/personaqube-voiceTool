@@ -7,6 +7,12 @@ export const config = {
   api: { bodyParser: false },
 }
 
+function json(res, status, payload) {
+  res.statusCode = status
+  res.setHeader("Content-Type", "application/json")
+  res.end(JSON.stringify(payload))
+}
+
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*")
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -16,17 +22,18 @@ function setCors(res) {
 export default async function handler(req, res) {
   setCors(res)
 
+  // ✅ Handle preflight cleanly
   if (req.method === "OPTIONS") {
-    return res.status(200).end()
+    return json(res, 200, { ok: true })
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" })
+    return json(res, 405, { ok: false, error: "Method not allowed" })
   }
 
   try {
     const audioChunks = []
-    let fileReceived = false
+    let fileFound = false
 
     await new Promise((resolve, reject) => {
       const busboy = Busboy({
@@ -34,16 +41,9 @@ export default async function handler(req, res) {
         limits: { files: 1 },
       })
 
-      busboy.on("file", (name, file) => {
-        fileReceived = true
-
-        file.on("data", (data) => {
-          audioChunks.push(data)
-        })
-
-        file.on("end", () => {
-          // important: allow finish to fire
-        })
+      busboy.on("file", (_, file) => {
+        fileFound = true
+        file.on("data", (d) => audioChunks.push(d))
       })
 
       busboy.on("finish", resolve)
@@ -52,14 +52,14 @@ export default async function handler(req, res) {
       req.pipe(busboy)
     })
 
-    if (!fileReceived || audioChunks.length === 0) {
-      return res.status(400).json({ error: "No audio received" })
+    if (!fileFound || audioChunks.length === 0) {
+      return json(res, 400, {
+        ok: false,
+        error: "No audio received",
+      })
     }
 
-    // =============================
-    // PHASE 2.1 – SCORING LOGIC
-    // =============================
-
+    // ===== PHASE 2.1 SAFE PLACEHOLDER =====
     const transcript =
       "Hi everyone, this is Ravi here. I am excited to record my voice."
 
@@ -73,15 +73,18 @@ export default async function handler(req, res) {
     const confidenceScore = computeConfidence(metrics)
     const personaFit = computePersonaFit(metrics)
 
-    return res.status(200).json({
+    return json(res, 200, {
+      ok: true,
       transcript,
       metrics,
       confidenceScore,
       personaFit,
     })
   } catch (err) {
-    console.error("Transcribe error:", err)
-    return res.status(500).json({ error: "Analysis failed" })
+    return json(res, 500, {
+      ok: false,
+      error: err?.message || "Analysis failed",
+    })
   }
 }
 
