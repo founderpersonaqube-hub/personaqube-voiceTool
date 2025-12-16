@@ -1,10 +1,11 @@
 import OpenAI from "openai"
 import Busboy from "busboy"
+import { calculateConfidenceAndPersona } from "../../lib/voiceScoring"
 
 function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "https://personaqube.com")
+  res.setHeader("Access-Control-Allow-Origin", "*")
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
 }
 
 export const config = {
@@ -79,10 +80,37 @@ export default async function handler(req, res) {
         model: "whisper-1",
       })
 
-      safeRespond(200, {
-        ok: true,
-        transcript: transcription.text,
-      })
+      const transcript = transcription.text || ""
+
+// SIMPLE metric extraction (per request)
+const words = transcript.toLowerCase().split(/\s+/)
+const fillerWords = ["uh", "um", "like", "you know", "actually", "basically", "so"]
+
+let fillerCount = 0
+words.forEach(w => {
+  if (fillerWords.includes(w)) fillerCount++
+})
+
+const fillerRate = fillerCount / Math.max(1, words.length)
+
+const metrics = {
+  clarity: Math.max(0.4, 1 - fillerRate * 1.6),
+  pacing: 0.75,
+  energy: 0.8,
+  fillerRate,
+}
+
+const { confidenceScore, personaFit } =
+  calculateConfidenceAndPersona(metrics)
+
+safeRespond(200, {
+  ok: true,
+  transcript,
+  metrics,
+  confidenceScore,
+  personaFit,
+})
+
     } catch (err) {
       console.error("WHISPER ERROR:", err)
       safeRespond(500, {
