@@ -1,5 +1,16 @@
 import Busboy from "busboy"
 import OpenAI from "openai"
+import {
+  computeConfidenceScore,
+  confidenceLabel,
+  computePersonaFit,
+  getTopPersonas,
+} from "@/lib/voiceScoring"
+import {
+  confidenceExplanation,
+  personaExplanation,
+  improvementTips,
+} from "@/lib/voiceInsights"
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "https://personaqube.com")
@@ -92,6 +103,9 @@ export default async function handler(req, res) {
         Coach: Math.round(clamp(clarity * 0.9 + energy * 0.2) * 100),
         Creator: Math.round(clamp(energy * 0.7 + pacing * 0.4) * 100),
       }
+      const explanation = confidenceExplanation(confidenceScore)
+      const personaWhy = personaExplanation(bestPersona)
+      const tips = improvementTips(metrics)
 
       return res.status(200).json({
         ok: true,
@@ -107,6 +121,9 @@ export default async function handler(req, res) {
           },
           confidenceScore,
           personaFit,
+	  explanation,
+          personaWhy,
+          tips,
         },
       })
     })
