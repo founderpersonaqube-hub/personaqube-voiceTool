@@ -7,7 +7,7 @@ import {
   personaExplanation,
   personaBlockers,
   personaImprovements,
-} from "@/lib/voiceInsights"
+} from "../../lib/voiceInsights"
 
 const primaryPersona = personaRank.primary[0]
 
