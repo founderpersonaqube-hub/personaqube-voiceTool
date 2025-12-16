@@ -4,10 +4,16 @@ import fs from "fs"
 import path from "path"
 import crypto from "crypto"
 import {
+  computeOverallConfidence,
+  computePersonaFit,
+  rankPersonas,
+} from "../../lib/voiceScoring.js"
+
+import {
   personaExplanation,
   personaBlockers,
   personaImprovements,
-} from "../../lib/voiceInsights"
+} from "../../lib/voiceInsights.js"
 
 const primaryPersona = personaRank.primary[0]
 
