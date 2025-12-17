@@ -73,10 +73,10 @@ console.log("OPENAI_API_KEY present:", !!process.env.OPENAI_API_KEY)
 
     return NextResponse.json({
       ok: true,
-      transcript,
-      metrics,
-      confidenceScore,
-      personaFit,
+      transcript:"Test transcript",
+      metrics: { clarity: 1, pacing: 1, energy: 1, fillerRate: 0 },
+      confidenceScore: 90,
+      personaFit: { Leader: 90 },
     })
   } catch (err) {
     console.error("WHISPER ERROR:", err)
