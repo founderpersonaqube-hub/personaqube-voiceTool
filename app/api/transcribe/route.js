@@ -1,11 +1,12 @@
 import OpenAI from "openai"
 import { NextResponse } from "next/server"
+
 import { extractMetrics } from "@/lib/metrics"
 import { computeOverallConfidence } from "@/lib/voiceScoring"
 import { generatePersonaInsights } from "@/lib/voiceInsights"
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 })
 
 export async function POST(request) {
@@ -17,7 +18,7 @@ export async function POST(request) {
         {
           ok: false,
           error:
-            'Content-Type must be "multipart/form-data" (audio upload required)',
+            'Content-Type must be "multipart/form-data" with a file field',
         },
         { status: 400 }
       )
@@ -33,6 +34,7 @@ export async function POST(request) {
       )
     }
 
+    // 1️⃣ Transcription
     const transcription = await openai.audio.transcriptions.create({
       file,
       model: "whisper-1",
@@ -41,9 +43,14 @@ export async function POST(request) {
 
     const transcript = transcription.text || ""
 
+    // 2️⃣ Metrics
     const metrics = extractMetrics(transcript)
-    const confidenceScore = computeOverallConfidence(metrics)
-    const personaFit = metrics.personaFit
+
+    // 3️⃣ Confidence + Persona
+    const { confidenceScore, personaFit } =
+      computeOverallConfidence(metrics)
+
+    // 4️⃣ Persona Insights
     const insights = generatePersonaInsights(personaFit, metrics)
 
     return NextResponse.json({
@@ -60,7 +67,7 @@ export async function POST(request) {
     return NextResponse.json(
       {
         ok: false,
-        error: err?.message || "Internal transcription failure",
+        error: err?.message || "Transcription failed",
       },
       { status: 500 }
     )
