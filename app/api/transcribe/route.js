@@ -1,8 +1,6 @@
-import OpenAI from "openai"
 import { NextResponse } from "next/server"
+import OpenAI from "openai"
 import { calculateConfidenceAndPersona } from "../../../lib/voiceScoring.js"
-
-export const runtime = "nodejs"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -11,9 +9,17 @@ const openai = new OpenAI({
 function extractMetrics(transcript) {
   const words = transcript.toLowerCase().split(/\s+/)
 
-  const fillers = ["uh", "um", "like", "you know", "actually", "basically", "so"]
-  let fillerCount = 0
+  const fillers = [
+    "uh",
+    "um",
+    "like",
+    "you know",
+    "actually",
+    "basically",
+    "so",
+  ]
 
+  let fillerCount = 0
   words.forEach(w => {
     if (fillers.includes(w)) fillerCount++
   })
@@ -30,9 +36,11 @@ function extractMetrics(transcript) {
 
 export async function POST(request) {
   let formData
+
+  // ---- SAFETY: multipart parsing must NEVER hang
   try {
     formData = await request.formData()
-  } catch (e) {
+  } catch {
     return NextResponse.json(
       { ok: false, error: "Invalid multipart form data" },
       { status: 400 }
@@ -41,9 +49,10 @@ export async function POST(request) {
 
   const file = formData.get("file")
 
+  // ---- SAFETY: must be a File
   if (!(file instanceof File)) {
     return NextResponse.json(
-      { ok: false, error: "Invalid or missing audio file" },
+      { ok: false, error: "Audio file missing or invalid" },
       { status: 400 }
     )
   }
@@ -57,6 +66,7 @@ export async function POST(request) {
 
     const transcript = transcription.text || ""
     const metrics = extractMetrics(transcript)
+
     const { confidenceScore, personaFit } =
       calculateConfidenceAndPersona(metrics)
 
@@ -69,8 +79,12 @@ export async function POST(request) {
     })
   } catch (err) {
     console.error("WHISPER ERROR:", err)
+
     return NextResponse.json(
-      { ok: false, error: "Transcription failed" },
+      {
+        ok: false,
+        error: err?.message || "Transcription failed",
+      },
       { status: 500 }
     )
   }
