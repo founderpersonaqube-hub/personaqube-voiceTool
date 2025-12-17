@@ -35,6 +35,7 @@ function extractMetrics(transcript) {
 }
 
 export async function POST(request) {
+console.log("OPENAI_API_KEY present:", !!process.env.OPENAI_API_KEY)
   let formData
 
   // ---- SAFETY: multipart parsing must NEVER hang
