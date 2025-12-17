@@ -7,54 +7,42 @@ const openai = new OpenAI({
 
 export async function POST(request) {
   try {
-    console.log("API HIT")
-    console.log("OPENAI_API_KEY present:", !!process.env.OPENAI_API_KEY)
+    const body = await request.json()
+    const base64Audio = body.audio
 
-    const formData = await request.formData()
-    const file = formData.get("file")
-
-    if (!file) {
-      console.error("NO FILE RECEIVED")
+    if (!base64Audio) {
       return NextResponse.json(
-        { ok: false, error: "No audio file received" },
+        { ok: false, error: "Missing audio data" },
         { status: 400 }
       )
     }
 
-    console.log("File received:", file.type, file.size)
+    // Convert base64 → Buffer
+    const audioBuffer = Buffer.from(base64Audio, "base64")
 
-    if (file.size === 0) {
+    if (audioBuffer.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "Empty audio file" },
+        { ok: false, error: "Empty audio buffer" },
         { status: 400 }
       )
     }
 
-    let transcript = ""
+    // Whisper transcription
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioBuffer,
+      model: "whisper-1",
+    })
 
-    try {
-      const response = await openai.audio.transcriptions.create({
-        file,
-        model: "whisper-1",
-      })
-      transcript = response.text || ""
-    } catch (err) {
-      console.error("WHISPER ERROR:", err)
-      return NextResponse.json(
-        { ok: false, error: "Whisper transcription failed" },
-        { status: 500 }
-      )
-    }
+    const transcript = transcription.text || ""
 
-    // TEMP: return transcript only (no scoring)
     return NextResponse.json({
       ok: true,
       transcript,
     })
   } catch (err) {
-    console.error("FATAL API ERROR:", err)
+    console.error("TRANSCRIBE ERROR:", err)
     return NextResponse.json(
-      { ok: false, error: "Fatal server error" },
+      { ok: false, error: "Server error" },
       { status: 500 }
     )
   }
