@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server"
 import OpenAI from "openai"
+import { NextResponse } from "next/server"
+
 import { extractMetrics } from "../../../lib/metrics"
-import { calculateConfidenceAndPersona } from "../../../lib/voiceScoring"
+import { computeOverallConfidence } from "../../../lib/voiceScoring"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -9,13 +10,6 @@ const openai = new OpenAI({
 
 export async function POST(request) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { ok: false, error: "OPENAI_API_KEY not configured" },
-        { status: 500 }
-      )
-    }
-
     const formData = await request.formData()
     const file = formData.get("file")
 
@@ -33,10 +27,9 @@ export async function POST(request) {
     })
 
     const transcript = transcription.text || ""
-
     const metrics = extractMetrics(transcript)
     const { confidenceScore, personaFit } =
-      calculateConfidenceAndPersona(metrics)
+      computeOverallConfidence(metrics)
 
     return NextResponse.json({
       ok: true,
@@ -48,10 +41,7 @@ export async function POST(request) {
   } catch (err) {
     console.error("TRANSCRIBE ERROR:", err)
     return NextResponse.json(
-      {
-        ok: false,
-        error: err?.message || "Internal server error",
-      },
+      { ok: false, error: err.message || "Server error" },
       { status: 500 }
     )
   }
