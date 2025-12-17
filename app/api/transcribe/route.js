@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import OpenAI from "openai"
 
-import { extractMetrics } from "@/lib/metrics"
-import { computeOverallConfidence } from "@/lib/voiceScoring"
-import { generatePersonaInsights } from "@/lib/voiceInsights"
+import { extractMetrics } from "../../../lib/metrics"
+import { computeOverallConfidence } from "../../../lib/voiceScoring"
+import { generatePersonaInsights } from "../../../lib/voiceInsights"
 
 export async function POST(request) {
   try {
