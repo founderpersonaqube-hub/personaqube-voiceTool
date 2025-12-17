@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import OpenAI from "openai"
 import { extractMetrics } from "../../../lib/metrics"
-import { calculateConfidenceAndPersona } from "../../../lib/scoring"
+import { calculateConfidenceAndPersona } from "../../../lib/voiceScoring"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
