@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import OpenAI from "openai"
+import { extractMetrics } from "@/lib/metrics"
+import { calculateConfidenceAndPersona } from "@/lib/scoring"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -7,42 +9,49 @@ const openai = new OpenAI({
 
 export async function POST(request) {
   try {
-    const body = await request.json()
-    const base64Audio = body.audio
-
-    if (!base64Audio) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { ok: false, error: "Missing audio data" },
+        { ok: false, error: "OPENAI_API_KEY not configured" },
+        { status: 500 }
+      )
+    }
+
+    const formData = await request.formData()
+    const file = formData.get("file")
+
+    if (!file) {
+      return NextResponse.json(
+        { ok: false, error: "Audio file missing" },
         { status: 400 }
       )
     }
 
-    // Convert base64 → Buffer
-    const audioBuffer = Buffer.from(base64Audio, "base64")
-
-    if (audioBuffer.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "Empty audio buffer" },
-        { status: 400 }
-      )
-    }
-
-    // Whisper transcription
     const transcription = await openai.audio.transcriptions.create({
-      file: audioBuffer,
+      file,
       model: "whisper-1",
+      language: "en",
     })
 
     const transcript = transcription.text || ""
 
+    const metrics = extractMetrics(transcript)
+    const { confidenceScore, personaFit } =
+      calculateConfidenceAndPersona(metrics)
+
     return NextResponse.json({
       ok: true,
       transcript,
+      metrics,
+      confidenceScore,
+      personaFit,
     })
   } catch (err) {
     console.error("TRANSCRIBE ERROR:", err)
     return NextResponse.json(
-      { ok: false, error: "Server error" },
+      {
+        ok: false,
+        error: err?.message || "Internal server error",
+      },
       { status: 500 }
     )
   }
