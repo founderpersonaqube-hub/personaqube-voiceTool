@@ -1,91 +1,60 @@
 import { NextResponse } from "next/server"
 import OpenAI from "openai"
-import { calculateConfidenceAndPersona } from "../../../lib/voiceScoring.js"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-function extractMetrics(transcript) {
-  const words = transcript.toLowerCase().split(/\s+/)
-
-  const fillers = [
-    "uh",
-    "um",
-    "like",
-    "you know",
-    "actually",
-    "basically",
-    "so",
-  ]
-
-  let fillerCount = 0
-  words.forEach(w => {
-    if (fillers.includes(w)) fillerCount++
-  })
-
-  const fillerRate = fillerCount / Math.max(1, words.length)
-
-  return {
-    clarity: Math.max(0.4, 1 - fillerRate * 1.6),
-    pacing: 0.75,
-    energy: 0.8,
-    fillerRate,
-  }
-}
-
 export async function POST(request) {
-console.log("OPENAI_API_KEY present:", !!process.env.OPENAI_API_KEY)
-  let formData
-
-  // ---- SAFETY: multipart parsing must NEVER hang
   try {
-    formData = await request.formData()
-  } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid multipart form data" },
-      { status: 400 }
-    )
-  }
+    console.log("API HIT")
+    console.log("OPENAI_API_KEY present:", !!process.env.OPENAI_API_KEY)
 
-  const file = formData.get("file")
+    const formData = await request.formData()
+    const file = formData.get("file")
 
-  // ---- SAFETY: must be a File
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { ok: false, error: "Audio file missing or invalid" },
-      { status: 400 }
-    )
-  }
+    if (!file) {
+      console.error("NO FILE RECEIVED")
+      return NextResponse.json(
+        { ok: false, error: "No audio file received" },
+        { status: 400 }
+      )
+    }
 
-  try {
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: "whisper-1",
-      language: "en",
-    })
+    console.log("File received:", file.type, file.size)
 
-    const transcript = transcription.text || ""
-    const metrics = extractMetrics(transcript)
+    if (file.size === 0) {
+      return NextResponse.json(
+        { ok: false, error: "Empty audio file" },
+        { status: 400 }
+      )
+    }
 
-    const { confidenceScore, personaFit } =
-      calculateConfidenceAndPersona(metrics)
+    let transcript = ""
 
+    try {
+      const response = await openai.audio.transcriptions.create({
+        file,
+        model: "whisper-1",
+      })
+      transcript = response.text || ""
+    } catch (err) {
+      console.error("WHISPER ERROR:", err)
+      return NextResponse.json(
+        { ok: false, error: "Whisper transcription failed" },
+        { status: 500 }
+      )
+    }
+
+    // TEMP: return transcript only (no scoring)
     return NextResponse.json({
       ok: true,
-      transcript:"Test transcript",
-      metrics: { clarity: 1, pacing: 1, energy: 1, fillerRate: 0 },
-      confidenceScore: 90,
-      personaFit: { Leader: 90 },
+      transcript,
     })
   } catch (err) {
-    console.error("WHISPER ERROR:", err)
-
+    console.error("FATAL API ERROR:", err)
     return NextResponse.json(
-      {
-        ok: false,
-        error: err?.message || "Transcription failed",
-      },
+      { ok: false, error: "Fatal server error" },
       { status: 500 }
     )
   }
