@@ -5,8 +5,7 @@ import { computeOverallConfidence } from "@/lib/voiceScoring"
 import { generatePersonaInsights } from "@/lib/voiceInsights"
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  project: process.env.OPENAI_PROJECT_ID,
+  apiKey: process.env.OPENAI_API_KEY
 })
 
 export async function POST(request) {
