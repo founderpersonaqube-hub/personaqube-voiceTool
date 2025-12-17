@@ -29,17 +29,26 @@ function extractMetrics(transcript) {
 }
 
 export async function POST(request) {
+  let formData
   try {
-    const formData = await request.formData()
-    const file = formData.get("file")
+    formData = await request.formData()
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid multipart form data" },
+      { status: 400 }
+    )
+  }
 
-    if (!file) {
-      return NextResponse.json(
-        { ok: false, error: "Audio file missing" },
-        { status: 400 }
-      )
-    }
+  const file = formData.get("file")
 
+  if (!(file instanceof File)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid or missing audio file" },
+      { status: 400 }
+    )
+  }
+
+  try {
     const transcription = await openai.audio.transcriptions.create({
       file,
       model: "whisper-1",
@@ -59,9 +68,9 @@ export async function POST(request) {
       personaFit,
     })
   } catch (err) {
-    console.error("TRANSCRIBE ERROR:", err)
+    console.error("WHISPER ERROR:", err)
     return NextResponse.json(
-      { ok: false, error: err.message || "Transcription failed" },
+      { ok: false, error: "Transcription failed" },
       { status: 500 }
     )
   }
